@@ -1,6 +1,6 @@
 .intel_syntax noprefix
 
-gt_do_switch: .globl gt_do_switch
+gt_thread_switch: .globl gt_thread_switch
     mov qword ptr [rdi], rsp
     mov qword ptr [rdi+8], r15
     mov qword ptr [rdi+16], r14

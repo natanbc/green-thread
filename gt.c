@@ -9,7 +9,6 @@
 #define PTRSZ sizeof(PTR)
 
 #if defined(__i386__)
-#error i386 is not supported yet
 #elif defined(__x86_64__)
     #define GT64 1
 #else
@@ -58,15 +57,17 @@ struct __gt_ctx {
 };
 
 //abandon all hope, ye who enter here
-extern void gt_do_switch(gt_thread_t* current, gt_thread_t* to);
+extern void gt_thread_switch(gt_thread_t* current, gt_thread_t* to);
 extern void gt_die();
+#ifdef GT64
 extern void gt_start_thread();
+#endif
 
 void gt_do_return(gt_ctx_t* ctx, gt_thread_t* thread) {
     (void)ctx;
     thread->state = gt_state_dead;
     ctx->buffer = NULL;
-    gt_do_switch(thread, thread->caller);
+    gt_thread_switch(thread, thread->caller);
 }
 
 void gt_thread_destroy(gt_thread_t* thread) {
@@ -96,6 +97,13 @@ void gt_ctx_free(gt_ctx_t* ctx) {
     free(ctx);
 }
 
+#ifndef GT64
+void gt_start_thread(gt_start_fn fn, gt_ctx_t* ctx) {
+    ctx->current->state = gt_state_alive;
+    fn(ctx, ctx->buffer);
+}
+#endif
+
 gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
     gt_thread_t* thread = malloc(sizeof(gt_thread_t));
     thread->dtors = NULL;
@@ -108,9 +116,14 @@ gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
 #define PUSH(x) do { *(PTR*)(&stack[stacksize - PTRSZ*(++pos)]) = (PTR)(x); } while(0)
     PUSH(ctx);
     PUSH(thread);
+#ifdef GT64
     PUSH(gt_die);
+#endif
     PUSH(ctx);
     PUSH(fn);
+#ifndef GT64
+    PUSH(gt_die);
+#endif
     PUSH(gt_start_thread);
     thread->regs.stack = (PTR)&stack[stacksize - PTRSZ*pos];
 
@@ -154,7 +167,7 @@ void* gt_thread_resume(gt_ctx_t* ctx, gt_thread_t* to, void* arg) {
 
     ctx->buffer = arg;
 
-    gt_do_switch(curr, to);
+    gt_thread_switch(curr, to);
     if(to->state == gt_state_dead) {
         gt_thread_destroy(to);
     }
@@ -162,10 +175,6 @@ void* gt_thread_resume(gt_ctx_t* ctx, gt_thread_t* to, void* arg) {
     curr->caller = currcall;
 
     return ctx->buffer;
-}
-
-void gt_thread_switch(gt_thread_t* from, gt_thread_t* to) {
-    gt_do_switch(from, to);
 }
 
 gt_thread_t* gt_caller(gt_ctx_t* ctx) {
