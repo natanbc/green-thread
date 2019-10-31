@@ -114,17 +114,22 @@ gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
     memset(&thread->regs, 0, sizeof(gt_regs_t));
     int pos = 0;
 #define PUSH(x) do { *(PTR*)(&stack[stacksize - PTRSZ*(++pos)]) = (PTR)(x); } while(0)
+#ifdef GT64
+    PUSH(0); //align stack
     PUSH(ctx);
     PUSH(thread);
-#ifdef GT64
     PUSH(gt_die);
-#endif
     PUSH(ctx);
     PUSH(fn);
-#ifndef GT64
-    PUSH(gt_die);
-#endif
     PUSH(gt_start_thread);
+#else
+    PUSH(ctx);
+    PUSH(thread);
+    PUSH(ctx);
+    PUSH(fn);
+    PUSH(gt_die);
+    PUSH(gt_start_thread);
+#endif
     thread->regs.stack = (PTR)&stack[stacksize - PTRSZ*pos];
 
 #ifndef GT64
@@ -175,6 +180,10 @@ void* gt_thread_resume(gt_ctx_t* ctx, gt_thread_t* to, void* arg) {
     curr->caller = currcall;
 
     return ctx->buffer;
+}
+
+void* gt_thread_yield(gt_ctx_t* ctx, void* arg) {
+    return gt_thread_resume(ctx, gt_caller(ctx), arg);
 }
 
 gt_thread_t* gt_caller(gt_ctx_t* ctx) {

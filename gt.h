@@ -88,8 +88,21 @@ gt_thread_state_t gt_thread_state(gt_thread_t* thread);
  * @param ctx Context to run this operation on.
  * @param to Thread to resume.
  * @param arg Argument to pass to the thread.
+ *
+ * @return Value provided to this thread when started again.
  */
 void* gt_thread_resume(gt_ctx_t* ctx, gt_thread_t* to, void* arg);
+
+/**
+ * Yields control to the caller thread.
+ * This function is equivalent to `gt_thread_resume(ctx, gt_caller(ctx), arg);`
+ *
+ * @param ctx Context to run this operation on.
+ * @param arg Argument to pass to the thread.
+ *
+ * @return Value provided to this thread when started again.
+ */
+void* gt_thread_yield(gt_ctx_t* ctx, void* arg);
 
 /**
  * Switches the currently running thread with another one. This is a low
