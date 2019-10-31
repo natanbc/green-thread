@@ -1,8 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-
-#include <stdio.h>
-
+#include <malloc.h>
 #include "gt.h"
 
 #define PTR   uintptr_t
@@ -110,7 +108,7 @@ gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
     thread->ndtors = 0;
 
     size_t stacksize = 131072;
-    uint8_t* stack = malloc(sizeof(uint8_t) * stacksize);
+    uint8_t* stack = memalign(64, sizeof(uint8_t) * stacksize);
     memset(&thread->regs, 0, sizeof(gt_regs_t));
     int pos = 0;
 #define PUSH(x) do { *(PTR*)(&stack[stacksize - PTRSZ*(++pos)]) = (PTR)(x); } while(0)
