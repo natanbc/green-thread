@@ -39,6 +39,9 @@ typedef struct {
 #endif
 } gt_regs_t;
 
+//this is just a marker type.
+struct __gt_tls {};
+
 struct __gt_thread {
     gt_regs_t regs;
     gt_thread_state_t state;
@@ -46,6 +49,8 @@ struct __gt_thread {
     struct __gt_thread* caller;
     destructor_t* dtors;
     uint32_t ndtors;
+    void** tls;
+    uint32_t ntls;
 };
 
 struct __gt_ctx {
@@ -53,6 +58,7 @@ struct __gt_ctx {
     gt_thread_t* root;
     void* buffer;
     size_t stacksize;
+    uint32_t ntls;
 };
 
 //abandon all hope, ye who enter here
@@ -78,6 +84,10 @@ void gt_thread_destroy(gt_thread_t* thread) {
     thread->dtors = NULL;
     thread->ndtors = 0;
 
+    free(thread->tls);
+    thread->tls = NULL;
+    thread->ntls = 0;
+
     free(thread->stack);
     thread->stack = NULL;
 }
@@ -85,6 +95,7 @@ void gt_thread_destroy(gt_thread_t* thread) {
 gt_ctx_t* gt_ctx_create() {
     gt_ctx_t* ctx = malloc(sizeof(gt_ctx_t));
     ctx->stacksize = 131072;
+    ctx->ntls = 0;
     ctx->current = ctx->root = malloc(sizeof(gt_thread_t));
     ctx->current->stack = NULL;
     ctx->current->dtors = NULL;
@@ -160,6 +171,36 @@ gt_thread_t* gt_thread_create_child(gt_ctx_t* ctx, gt_start_fn fn) {
 void gt_thread_free(gt_thread_t* thread) {
     gt_thread_destroy(thread);
     free(thread);
+}
+
+gt_tls_t* gt_tls_new(gt_ctx_t* ctx) {
+    return (gt_tls_t*)(size_t)(++ctx->ntls);
+}
+
+inline void** gt_tls_get_location(gt_ctx_t* ctx, gt_tls_t* tls) {
+    gt_thread_t* t = ctx->current;
+    uint32_t n = (uint32_t)(size_t)tls;
+    if(t->ntls < n) {
+        t->tls = realloc(t->tls, n);
+        t->ntls = n;
+        t->tls[n-1] = NULL;
+    }
+    return &t->tls[n-1];
+}
+
+void* gt_tls_get(gt_ctx_t* ctx, gt_tls_t* tls) {
+    return *gt_tls_get_location(ctx, tls);
+}
+
+void* gt_tls_set(gt_ctx_t* ctx, gt_tls_t* tls, void* value) {
+    void** slot = gt_tls_get_location(ctx, tls);
+    void* old = *slot;
+    *slot = value;
+    return old;
+}
+
+void gt_tls_free(gt_ctx_t* ctx, gt_tls_t* tls) {
+    //nothing to do
 }
 
 gt_thread_state_t gt_thread_state(gt_thread_t* thread) {

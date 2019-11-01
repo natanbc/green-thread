@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdint.h>
 
 typedef struct {
@@ -13,6 +15,7 @@ typedef enum {
 
 typedef struct __gt_thread gt_thread_t;
 typedef struct __gt_ctx gt_ctx_t;
+typedef struct __gt_tls gt_tls_t;
 
 typedef void (*gt_start_fn)(gt_ctx_t*, void*);
 
@@ -84,6 +87,63 @@ void gt_thread_free(gt_thread_t* thread);
  * @return The state of the thread.
  */
 gt_thread_state_t gt_thread_state(gt_thread_t* thread);
+
+/**
+ * Allocates a new TLS (thread local storage) slot for the given context.
+ * This slot can be used within any threads belonging to that context.
+ *
+ * @param ctx Context to allocate this slot on.
+ *
+ * @return The new TLS slot.
+ */
+gt_tls_t* gt_tls_new(gt_ctx_t* ctx);
+
+/**
+ * Returns the address where the TLS data for the given slot is stored
+ * in the current thread. If no value has been set to this slot for the
+ * current thread, this address will contain NULL.
+ *
+ * This address is valid until either the current thread dies or `gt_tls_free`
+ * is called on it.
+ *
+ * @param ctx Context this slot belongs to.
+ * @param tls Wanted slot.
+ *
+ * @return The address the TLS data is stored for this slot.
+ */
+void** gt_tls_get_location(gt_ctx_t* ctx, gt_tls_t* tls);
+
+/**
+ * Returns the value currently stored in the current thread for the given
+ * TLS slot. If no value has been set, NULL is returned.
+ *
+ * @param ctx Context this slot belongs to.
+ * @param tls Slot to get.
+ *
+ * @return The currently stored value.
+ */
+void* gt_tls_get(gt_ctx_t* ctx, gt_tls_t* tls);
+
+/**
+ * Sets the value for the given TLS slot for the current thread and
+ * returns the previous value. If this is the first time this slot
+ * is set, NULL is returned.
+ *
+ * @param ctx Context this slot belongs to.
+ * @param tls Slot to set.
+ * @param value Value to set.
+ *
+ * @return The previous value of this slot.
+ */
+void* gt_tls_set(gt_ctx_t* ctx, gt_tls_t* tls, void* value);
+
+/**
+ * Deallocates a TLS slot. This slot may not be used anymore by any thread.
+ *
+ * @param ctx Context this slot belongs to.
+ * @param tls Slot to deallocate.
+ */
+void gt_tls_free(gt_ctx_t* ctx, gt_tls_t* tls);
 
 /**
  * Resumes a thread, passing an argument to it. If the thread has not been
