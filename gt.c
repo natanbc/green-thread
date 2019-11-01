@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
@@ -42,15 +43,29 @@ typedef struct {
 //this is just a marker type.
 struct __gt_tls {};
 
+typedef struct {
+    uint32_t key;
+    void* value;
+} gt_tls_entry_t;
+
+typedef struct {
+    uint32_t index;
+    bool present;
+} gt_tls_find_result_t;
+
 struct __gt_thread {
     gt_regs_t regs;
     gt_thread_state_t state;
     uint8_t* stack;
     struct __gt_thread* caller;
-    destructor_t* dtors;
-    uint32_t ndtors;
-    void** tls;
-    uint32_t ntls;
+    struct {
+        destructor_t* list;
+        uint32_t count;
+    } dtors;
+    struct {
+        gt_tls_entry_t* data;
+        uint32_t count;
+    } tls;
 };
 
 struct __gt_ctx {
@@ -76,17 +91,17 @@ void gt_do_return(gt_ctx_t* ctx, gt_thread_t* thread) {
 }
 
 void gt_thread_destroy(gt_thread_t* thread) {
-    for(uint32_t i = 0; i < thread->ndtors; i++) {
-        destructor_t d = thread->dtors[i];
+    for(uint32_t i = 0; i < thread->dtors.count; i++) {
+        destructor_t d = thread->dtors.list[i];
         d.fn(d.arg);
     }
-    free(thread->dtors);
-    thread->dtors = NULL;
-    thread->ndtors = 0;
+    free(thread->dtors.list);
+    thread->dtors.list = NULL;
+    thread->dtors.count = 0;
 
-    free(thread->tls);
-    thread->tls = NULL;
-    thread->ntls = 0;
+    free(thread->tls.data);
+    thread->tls.data = NULL;
+    thread->tls.count = 0;
 
     free(thread->stack);
     thread->stack = NULL;
@@ -98,8 +113,10 @@ gt_ctx_t* gt_ctx_create() {
     ctx->ntls = 0;
     ctx->current = ctx->root = malloc(sizeof(gt_thread_t));
     ctx->current->stack = NULL;
-    ctx->current->dtors = NULL;
-    ctx->current->ndtors = 0;
+    ctx->current->dtors.list = NULL;
+    ctx->current->dtors.count = 0;
+    ctx->current->tls.data = NULL;
+    ctx->current->tls.count = 0;
     return ctx;
 }
 
@@ -123,8 +140,10 @@ void gt_start_thread(gt_start_fn fn, gt_ctx_t* ctx) {
 
 gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
     gt_thread_t* thread = malloc(sizeof(gt_thread_t));
-    thread->dtors = NULL;
-    thread->ndtors = 0;
+    thread->dtors.list = NULL;
+    thread->dtors.count = 0;
+    thread->tls.data = NULL;
+    thread->tls.count = 0;
 
     size_t stacksize = ctx->stacksize;
     uint8_t* stack = memalign(64, sizeof(uint8_t) * stacksize);
@@ -177,15 +196,29 @@ gt_tls_t* gt_tls_new(gt_ctx_t* ctx) {
     return (gt_tls_t*)(size_t)(++ctx->ntls);
 }
 
-inline void** gt_tls_get_location(gt_ctx_t* ctx, gt_tls_t* tls) {
+static gt_tls_find_result_t gt_tls_find_entry(
+        const gt_tls_entry_t* entries, uint32_t size, uint32_t key);
+
+static inline void** gt_tls_get_location(gt_ctx_t* ctx, gt_tls_t* tls) {
     gt_thread_t* t = ctx->current;
-    uint32_t n = (uint32_t)(size_t)tls;
-    if(t->ntls < n) {
-        t->tls = realloc(t->tls, n);
-        t->ntls = n;
-        t->tls[n-1] = NULL;
+    uint32_t key = (uint32_t)(size_t)tls;
+    gt_tls_find_result_t pos = gt_tls_find_entry(t->tls.data, t->tls.count, key);
+
+    if(pos.present) {
+        return &t->tls.data[pos.index].value;
     }
-    return &t->tls[n-1];
+    gt_tls_entry_t* new = realloc(t->tls.data, t->tls.count + 1);
+    memmove(&new[pos.index+1], &new[pos.index],
+            sizeof(gt_tls_entry_t) * (t->tls.count - pos.index));
+
+    new[pos.index] = (gt_tls_entry_t) {
+        .key = key,
+        .value = NULL
+    };
+
+    t->tls.data = new;
+    t->tls.count++;
+    return &t->tls.data[pos.index].value;
 }
 
 void* gt_tls_get(gt_ctx_t* ctx, gt_tls_t* tls) {
@@ -243,9 +276,41 @@ gt_thread_t* gt_current(gt_ctx_t* ctx) {
 
 void gt_register_destructor(gt_ctx_t* ctx, destructor_t destructor) {
     gt_thread_t* t = ctx->current;
-    destructor_t* d = realloc(t->dtors, t->ndtors + 1);
-    d[t->ndtors] = destructor;
-    t->ndtors++;
-    t->dtors = d;
+    destructor_t* d = realloc(t->dtors.list, t->dtors.count + 1);
+    d[t->dtors.count] = destructor;
+    t->dtors.count++;
+    t->dtors.list = d;
+}
+
+gt_tls_find_result_t gt_tls_find_entry(const gt_tls_entry_t* tls, uint32_t size, uint32_t key) {
+    if(size == 0) {
+        return (gt_tls_find_result_t) {
+            .index = 0,
+            .present = false
+        };
+    }
+    uint32_t mid = 0;
+    uint32_t left = 0;
+    uint32_t right = size;
+    int cmp;
+
+    while (left < right) {
+        mid = (left + right) / 2;
+        cmp = tls[mid].key - key;
+        if (cmp < 0) {
+            right = mid;
+        } else if (cmp > 0) {
+            left = mid+1;
+        } else {
+            break;
+        }
+    }
+
+    if(cmp != 0) mid++;
+    gt_tls_find_result_t res = {
+        .index = mid,
+        .present = cmp == 0
+    };
+    return res;
 }
 

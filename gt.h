@@ -99,21 +99,6 @@ gt_thread_state_t gt_thread_state(gt_thread_t* thread);
 gt_tls_t* gt_tls_new(gt_ctx_t* ctx);
 
 /**
- * Returns the address where the TLS data for the given slot is stored
- * in the current thread. If no value has been set to this slot for the
- * current thread, this address will contain NULL.
- *
- * This address is valid until either the current thread dies or `gt_tls_free`
- * is called on it.
- *
- * @param ctx Context this slot belongs to.
- * @param tls Wanted slot.
- *
- * @return The address the TLS data is stored for this slot.
- */
-void** gt_tls_get_location(gt_ctx_t* ctx, gt_tls_t* tls);
-
-/**
  * Returns the value currently stored in the current thread for the given
  * TLS slot. If no value has been set, NULL is returned.
  *
