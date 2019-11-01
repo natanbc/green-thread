@@ -29,8 +29,19 @@ gt_ctx_t* gt_ctx_create();
 void gt_ctx_free(gt_ctx_t* ctx);
 
 /**
- * Creates a new thread that will run the given function. A stack of 128KiB is
- * allocated for the thread.
+ * Sets the stack size for each thread. Only new threads are affected.
+ * Values smaller than 4096 are ignored.
+ *
+ * The default stack size is 131072.
+ *
+ * @param ctx Context to modify.
+ * @param size Stack size to use.
+ */
+void gt_ctx_set_stack_size(gt_ctx_t* ctx, size_t size);
+
+/**
+ * Creates a new thread that will run the given function. A new stack with the
+ * size configured by `gt_ctx_set_stack_size` is allocated for the thread.
  *
  * @param ctx Context to create this thread in.
  * @param fn Function to run when the thread starts.

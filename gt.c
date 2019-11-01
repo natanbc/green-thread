@@ -52,6 +52,7 @@ struct __gt_ctx {
     gt_thread_t* current;
     gt_thread_t* root;
     void* buffer;
+    size_t stacksize;
 };
 
 //abandon all hope, ye who enter here
@@ -83,6 +84,7 @@ void gt_thread_destroy(gt_thread_t* thread) {
 
 gt_ctx_t* gt_ctx_create() {
     gt_ctx_t* ctx = malloc(sizeof(gt_ctx_t));
+    ctx->stacksize = 131072;
     ctx->current = ctx->root = malloc(sizeof(gt_thread_t));
     ctx->current->stack = NULL;
     ctx->current->dtors = NULL;
@@ -93,6 +95,12 @@ gt_ctx_t* gt_ctx_create() {
 void gt_ctx_free(gt_ctx_t* ctx) {
     gt_thread_free(ctx->root);
     free(ctx);
+}
+
+void gt_ctx_set_stack_size(gt_ctx_t* ctx, size_t size) {
+    if(size >= 4096) {
+        ctx->stacksize = size;
+    }
 }
 
 #ifndef GT64
@@ -107,7 +115,7 @@ gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
     thread->dtors = NULL;
     thread->ndtors = 0;
 
-    size_t stacksize = 131072;
+    size_t stacksize = ctx->stacksize;
     uint8_t* stack = memalign(64, sizeof(uint8_t) * stacksize);
     memset(&thread->regs, 0, sizeof(gt_regs_t));
     int pos = 0;
