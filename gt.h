@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
@@ -21,6 +22,9 @@ typedef void (*gt_start_fn)(gt_ctx_t*, void*);
 
 /**
  * Creates a new gt context. This context can only be shared across gt threads.
+ *
+ * A "main" thread is also created, with a NULL caller and no stack allocated
+ * for it. Instead, the current stack is used.
  *
  * @return The new context.
  */
@@ -49,7 +53,7 @@ void gt_ctx_set_stack_size(gt_ctx_t* ctx, size_t size);
  * @param ctx Context to create this thread in.
  * @param fn Function to run when the thread starts.
  *
- * @return The new thread.
+ * @return The new thread. If creating the thread fails, NULL is returned.
  */
 gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn);
 
@@ -69,7 +73,7 @@ gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn);
  * @param ctx Context to create this thread in.
  * @param fn Function to run when the thread starts.
  *
- * @return The new thread.
+ * @return The new thread. If creating the thread fails, NULL is returned.
  */
 gt_thread_t* gt_thread_create_child(gt_ctx_t* ctx, gt_start_fn fn);
 
@@ -104,10 +108,11 @@ gt_tls_t* gt_tls_new(gt_ctx_t* ctx);
  *
  * @param ctx Context this slot belongs to.
  * @param tls Slot to get.
+ * @param dest Address to store the value.
  *
- * @return The currently stored value.
+ * @return `true` on success, `false` on failure.
  */
-void* gt_tls_get(gt_ctx_t* ctx, gt_tls_t* tls);
+bool gt_tls_get(gt_ctx_t* ctx, gt_tls_t* tls, void** dest);
 
 /**
  * Sets the value for the given TLS slot for the current thread and
@@ -117,10 +122,11 @@ void* gt_tls_get(gt_ctx_t* ctx, gt_tls_t* tls);
  * @param ctx Context this slot belongs to.
  * @param tls Slot to set.
  * @param value Value to set.
+ * @param old Address to store the old value. May be null.
  *
- * @return The previous value of this slot.
+ * @return `true` on success, `false` on failure.
  */
-void* gt_tls_set(gt_ctx_t* ctx, gt_tls_t* tls, void* value);
+bool gt_tls_set(gt_ctx_t* ctx, gt_tls_t* tls, void* value, void** old);
 
 /**
  * Deallocates a TLS slot. This slot may not be used anymore by any thread.
@@ -152,6 +158,7 @@ void* gt_thread_resume(gt_ctx_t* ctx, gt_thread_t* to, void* arg);
 /**
  * Yields control to the caller thread.
  * This function is equivalent to `gt_thread_resume(ctx, gt_caller(ctx), arg);`
+ * May not be called from the main thread.
  *
  * @param ctx Context to run this operation on.
  * @param arg Argument to pass to the thread.
@@ -193,6 +200,8 @@ gt_thread_t* gt_current(gt_ctx_t* ctx);
  *
  * @param ctx Context to register this destructor on.
  * @param dtor Destructor to register.
+ *
+ * @return `true` on success, `false` on failure.
  */
-void gt_register_destructor(gt_ctx_t* ctx, destructor_t dtor);
+bool gt_register_destructor(gt_ctx_t* ctx, destructor_t dtor);
 

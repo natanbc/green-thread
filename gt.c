@@ -109,9 +109,16 @@ void gt_thread_destroy(gt_thread_t* thread) {
 
 gt_ctx_t* gt_ctx_create() {
     gt_ctx_t* ctx = malloc(sizeof(gt_ctx_t));
+    if(ctx == NULL) {
+        return NULL;
+    }
     ctx->stacksize = 131072;
     ctx->ntls = 0;
     ctx->current = ctx->root = malloc(sizeof(gt_thread_t));
+    if(ctx->current == NULL) {
+        free(ctx);
+        return NULL;
+    }
     ctx->current->stack = NULL;
     ctx->current->dtors.list = NULL;
     ctx->current->dtors.count = 0;
@@ -140,6 +147,9 @@ void gt_start_thread(gt_start_fn fn, gt_ctx_t* ctx) {
 
 gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
     gt_thread_t* thread = malloc(sizeof(gt_thread_t));
+    if(thread == NULL) {
+        return NULL;
+    }
     thread->dtors.list = NULL;
     thread->dtors.count = 0;
     thread->tls.data = NULL;
@@ -147,6 +157,10 @@ gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
 
     size_t stacksize = ctx->stacksize;
     uint8_t* stack = memalign(64, sizeof(uint8_t) * stacksize);
+    if(stack == NULL) {
+        free(thread);
+        return NULL;
+    }
     memset(&thread->regs, 0, sizeof(gt_regs_t));
     int pos = 0;
 #define PUSH(x) do { *(PTR*)(&stack[stacksize - PTRSZ*(++pos)]) = (PTR)(x); } while(0)
@@ -179,11 +193,17 @@ gt_thread_t* gt_thread_create(gt_ctx_t* ctx, gt_start_fn fn) {
 
 gt_thread_t* gt_thread_create_child(gt_ctx_t* ctx, gt_start_fn fn) {
     gt_thread_t* thread = gt_thread_create(ctx, fn);
+    if(thread == NULL) {
+        return NULL;
+    }
     destructor_t dtor = {
         .fn = (void (*)(void*))gt_thread_free,
         .arg = thread
     };
-    gt_register_destructor(ctx, dtor);
+    if(!gt_register_destructor(ctx, dtor)) {
+        gt_thread_free(thread);
+        return NULL;
+    }
     return thread;
 }
 
@@ -208,6 +228,9 @@ static inline void** gt_tls_get_location(gt_ctx_t* ctx, gt_tls_t* tls) {
         return &t->tls.data[pos.index].value;
     }
     gt_tls_entry_t* new = realloc(t->tls.data, t->tls.count + 1);
+    if(new == NULL) {
+        return NULL;
+    }
     memmove(&new[pos.index+1], &new[pos.index],
             sizeof(gt_tls_entry_t) * (t->tls.count - pos.index));
 
@@ -221,19 +244,31 @@ static inline void** gt_tls_get_location(gt_ctx_t* ctx, gt_tls_t* tls) {
     return &t->tls.data[pos.index].value;
 }
 
-void* gt_tls_get(gt_ctx_t* ctx, gt_tls_t* tls) {
-    return *gt_tls_get_location(ctx, tls);
+bool gt_tls_get(gt_ctx_t* ctx, gt_tls_t* tls, void** dest) {
+    void** slot = gt_tls_get_location(ctx, tls);
+    if(slot == NULL) {
+        return false;
+    }
+    *dest = *slot;
+    return true;
 }
 
-void* gt_tls_set(gt_ctx_t* ctx, gt_tls_t* tls, void* value) {
+bool gt_tls_set(gt_ctx_t* ctx, gt_tls_t* tls, void* value, void** old) {
     void** slot = gt_tls_get_location(ctx, tls);
-    void* old = *slot;
+    if(slot == NULL) {
+        return false;
+    }
+    if(old != NULL) {
+        *old = *slot;
+    }
     *slot = value;
-    return old;
+    return true;
 }
 
 void gt_tls_free(gt_ctx_t* ctx, gt_tls_t* tls) {
     //nothing to do
+    (void)ctx;
+    (void)tls;
 }
 
 gt_thread_state_t gt_thread_state(gt_thread_t* thread) {
@@ -274,12 +309,16 @@ gt_thread_t* gt_current(gt_ctx_t* ctx) {
     return ctx->current;
 }
 
-void gt_register_destructor(gt_ctx_t* ctx, destructor_t destructor) {
+bool gt_register_destructor(gt_ctx_t* ctx, destructor_t destructor) {
     gt_thread_t* t = ctx->current;
     destructor_t* d = realloc(t->dtors.list, t->dtors.count + 1);
+    if(d == NULL) {
+        return false;
+    }
     d[t->dtors.count] = destructor;
     t->dtors.count++;
     t->dtors.list = d;
+    return true;
 }
 
 gt_tls_find_result_t gt_tls_find_entry(const gt_tls_entry_t* tls, uint32_t size, uint32_t key) {
